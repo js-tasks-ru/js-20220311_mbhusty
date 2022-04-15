@@ -31,6 +31,7 @@ export default class ProductForm {
     element.innerHTML = this.getTemplate();
     this.element = element;
     this.subElements = this.getSubElements();
+    this.initEventListeners();
     return this.element;
   }
 
@@ -47,6 +48,43 @@ export default class ProductForm {
     url.searchParams.set("id", this.productId);
 
     return await fetchJson(url);
+  }
+
+  async save() {
+    const url = new URL("api/rest/products", BACKEND_URL);
+    const method = this.productId ? "PATCH" : "PUT";
+    const data = this.setData();
+
+    await fetchJson(url, {
+      method: method,
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    });
+
+    const customEvent = this.productId
+      ? new CustomEvent("product-updated", {
+          detail: "Successfully updated",
+        })
+      : new CustomEvent("product-saved", {
+          detail: "Successfully saved",
+        });
+    this.element.dispatchEvent(customEvent);
+  }
+
+  setData() {
+    return {
+      description: this.data.description,
+      discount: this.data.discount,
+      id: this.data.id,
+      images: this.data.images,
+      price: this.data.price,
+      quantity: this.data.quantity,
+      status: this.data.status,
+      subcategory: this.data.subcategory,
+      title: this.data.title,
+    };
   }
 
   getTemplate() {
@@ -233,6 +271,83 @@ export default class ProductForm {
     } else {
       this.data[field] = escapeHtml(active.value);
     }
+  };
+
+  initEventListeners() {
+    this.uploadImageBtn = this.element.querySelector(
+      "button[name=uploadImage]"
+    );
+    this.uploadImageBtn.addEventListener("click", this.uploadImage);
+    this.subElements.imageListContainer.addEventListener(
+      "click",
+      this.deleteImage
+    );
+    this.element.addEventListener("change", this.changeData);
+    this.element.addEventListener("submit", (event) => {
+      event.preventDefault();
+      this.save();
+    });
+  }
+
+  uploadImage = () => {
+    const hiddenUploadBtn = document.createElement("input");
+    hiddenUploadBtn.type = "file";
+    hiddenUploadBtn.name = "picture";
+    hiddenUploadBtn.accept = "image/*";
+    hiddenUploadBtn.click();
+
+    hiddenUploadBtn.addEventListener("change", async () => {
+      const image = hiddenUploadBtn.files[0];
+      let result = await this.sendImageToImgur(image);
+      this.addImageToList(image.name, result.data.link);
+      this.uploadImageBtn.classList.remove("is-loading");
+    });
+  };
+
+  async sendImageToImgur(image) {
+    const url = "https://api.imgur.com/3/image";
+    const data = new FormData();
+    data.append("image", image);
+    this.uploadImageBtn.classList.add("is-loading");
+
+    return await fetchJson(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Client-ID ${IMGUR_CLIENT_ID}`,
+      },
+      body: data,
+      referrer: "",
+    });
+  }
+
+  addImageToList(name, link) {
+    if (!this.data?.images?.length) {
+      this.data.images = [];
+    }
+    this.data.images.push({ source: name, url: link });
+    const imagesList = this.subElements.imageListContainer.firstElementChild;
+    imagesList.insertAdjacentHTML("beforeend", this.getImage(link, name));
+  }
+
+  deleteImage = (event) => {
+    const active = event.target.closest(".products-edit__image");
+
+    if (!active) {
+      return;
+    }
+
+    const url = active.children[0].value;
+    const source = active.children[1].value;
+
+    const activeIndex = this.data.images.findIndex((item) => {
+      return item.source === source && item.url === url;
+    });
+
+    if (activeIndex >= 0) {
+      this.data.images.splice(activeIndex, 1);
+    }
+
+    active.remove();
   };
 
   remove() {
